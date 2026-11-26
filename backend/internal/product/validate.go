@@ -119,3 +119,42 @@ func ValidateUpdate(in *UpdateInput) []apperr.Detail {
 
 	return details
 }
+
+func ValidateAdjust(in *AdjustInput) []apperr.Detail {
+	var details []apperr.Detail
+
+	if in.Type != MovementIn && in.Type != MovementOut {
+		details = append(details, apperr.Detail{
+			Field:   "type",
+			Message: `must be "in" or "out"`,
+		})
+	}
+
+	if in.Qty == nil {
+		details = append(details, apperr.Detail{
+			Field:   "qty",
+			Message: "is required",
+		})
+	} else if *in.Qty < 1 || *in.Qty > 1000000 {
+		details = append(details, apperr.Detail{
+			Field:   "qty",
+			Message: "must be between 1 and 1000000",
+		})
+	}
+
+	if in.Note != nil {
+		note := strings.TrimSpace(*in.Note)
+		if note == "" {
+			in.Note = nil
+		} else if utf8.RuneCountInString(note) > 500 {
+			details = append(details, apperr.Detail{
+				Field:   "note",
+				Message: "must be at most 500 characters",
+			})
+		} else {
+			in.Note = &note
+		}
+	}
+
+	return details
+}

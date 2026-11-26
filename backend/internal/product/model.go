@@ -44,3 +44,14 @@ type UpdateInput struct {
 	Price    *int    `json:"price"`
 	IsActive *bool   `json:"is_active"`
 }
+
+type AdjustInput struct {
+	Type string  `json:"type"`
+	Qty  *int    `json:"qty"`
+	Note *string `json:"note"`
+}
+
+type AdjustResult struct {
+	Product  Product  `json:"product"`
+	Movement Movement `json:"movement"`
+}

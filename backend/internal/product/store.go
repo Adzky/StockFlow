@@ -275,3 +275,82 @@ func (s *Store) Delete(ctx context.Context, id int) error {
 		"product has stock history and cannot be deleted",
 	)
 }
+
+func (s *Store) AdjustStock(
+	ctx context.Context,
+	id int,
+	in AdjustInput,
+) (AdjustResult, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return AdjustResult{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	query := `UPDATE products SET stock = stock + $2
+        WHERE id = $1 RETURNING id`
+
+	if in.Type == MovementOut {
+		query = `UPDATE products SET stock = stock - $2
+            WHERE id = $1 AND stock >= $2 RETURNING id`
+	}
+
+	var updatedID int
+	err = tx.QueryRow(ctx, query, id, *in.Qty).Scan(&updatedID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		var available int
+		err = tx.QueryRow(
+			ctx,
+			`SELECT stock FROM products WHERE id = $1`,
+			id,
+		).Scan(&available)
+
+		if errors.Is(err, pgx.ErrNoRows) {
+			return AdjustResult{}, apperr.NotFound("product not found")
+		}
+		if err != nil {
+			return AdjustResult{}, err
+		}
+
+		return AdjustResult{}, apperr.InsufficientStock("", available)
+	}
+	if err != nil {
+		return AdjustResult{}, err
+	}
+
+	var movement Movement
+	err = tx.QueryRow(ctx, `
+        INSERT INTO stock_movements (product_id, type, qty, note)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, product_id, type, qty, note, order_id, created_at`,
+		id,
+		in.Type,
+		*in.Qty,
+		in.Note,
+	).Scan(
+		&movement.ID,
+		&movement.ProductID,
+		&movement.Type,
+		&movement.Qty,
+		&movement.Note,
+		&movement.OrderID,
+		&movement.CreatedAt,
+	)
+	if err != nil {
+		return AdjustResult{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return AdjustResult{}, err
+	}
+
+	product, err := s.Get(ctx, id)
+	if err != nil {
+		return AdjustResult{}, err
+	}
+
+	return AdjustResult{
+		Product:  product,
+		Movement: movement,
+	}, nil
+}

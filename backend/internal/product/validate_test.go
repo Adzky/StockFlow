@@ -223,3 +223,92 @@ func TestValidateUpdate(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateAdjust(t *testing.T) {
+	tests := []struct {
+		name string
+		in   AdjustInput
+		want []apperr.Detail
+	}{
+		{
+			name: "valid input trims note",
+			in: AdjustInput{
+				Type: MovementIn,
+				Qty:  intPtr(3),
+				Note: stringPtr(" restock "),
+			},
+		},
+		{
+			name: "valid input converts blank note to nil",
+			in: AdjustInput{
+				Type: MovementOut,
+				Qty:  intPtr(1),
+				Note: stringPtr("   "),
+			},
+		},
+		{
+			name: "missing quantity",
+			in: AdjustInput{
+				Type: MovementIn,
+			},
+			want: []apperr.Detail{
+				{Field: "qty", Message: "is required"},
+			},
+		},
+		{
+			name: "invalid type",
+			in: AdjustInput{
+				Type: "x",
+				Qty:  intPtr(1),
+			},
+			want: []apperr.Detail{
+				{Field: "type", Message: `must be "in" or "out"`},
+			},
+		},
+		{
+			name: "quantity below range",
+			in: AdjustInput{
+				Type: MovementIn,
+				Qty:  intPtr(0),
+			},
+			want: []apperr.Detail{
+				{Field: "qty", Message: "must be between 1 and 1000000"},
+			},
+		},
+		{
+			name: "quantity above range",
+			in: AdjustInput{
+				Type: MovementOut,
+				Qty:  intPtr(1000001),
+			},
+			want: []apperr.Detail{
+				{Field: "qty", Message: "must be between 1 and 1000000"},
+			},
+		},
+		{
+			name: "note too long",
+			in: AdjustInput{
+				Type: MovementIn,
+				Qty:  intPtr(1),
+				Note: stringPtr(strings.Repeat("N", 501)),
+			},
+			want: []apperr.Detail{
+				{Field: "note", Message: "must be at most 500 characters"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ValidateAdjust(&tt.in)
+			require.Equal(t, tt.want, got)
+
+			if tt.name == "valid input trims note" {
+				require.Equal(t, "restock", *tt.in.Note)
+			}
+			if tt.name == "valid input converts blank note to nil" {
+				require.Nil(t, tt.in.Note)
+			}
+		})
+	}
+}
