@@ -1,5 +1,8 @@
 import { Link, Route, Routes } from 'react-router-dom'
 import { ProductsPage } from './pages/ProductsPage'
+import { CreateOrderPage } from './pages/CreateOrderPage'
+import { OrdersPage } from './pages/OrdersPage'
+import { OrderDetailPage } from './pages/OrderDetailPage'
 
 export default function App() {
   return (
@@ -14,9 +17,9 @@ export default function App() {
 
       <Routes>
         <Route path="/" element={<ProductsPage />} />
-        <Route path="/orders" element={<h1>Orders</h1>} />
-        <Route path="/orders/new" element={<h1>New order</h1>} />
-        <Route path="/orders/:id" element={<h1>Order detail</h1>} />
+        <Route path="/orders" element={<OrdersPage />} />
+        <Route path="/orders/new" element={<CreateOrderPage />} />
+        <Route path="/orders/:id" element={<OrderDetailPage />} />
       </Routes>
     </>
   )
