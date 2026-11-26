@@ -19,6 +19,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("POST /api/orders", httpx.Handle(h.create))
 	mux.Handle("GET /api/orders", httpx.Handle(h.list))
 	mux.Handle("GET /api/orders/{id}", httpx.Handle(h.get))
+	mux.Handle("POST /api/orders/{id}/cancel", httpx.Handle(h.cancel))
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) error {
@@ -77,5 +78,20 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) error {
 		Limit: limit,
 		Total: total,
 	})
+	return nil
+}
+
+func (h *Handler) cancel(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+
+	cancelled, err := h.service.Cancel(r.Context(), id)
+	if err != nil {
+		return err
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, cancelled)
 	return nil
 }

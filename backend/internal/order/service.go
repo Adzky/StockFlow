@@ -315,3 +315,93 @@ func (s *Service) List(ctx context.Context, page, limit int) ([]Summary, int, er
 
 	return summaries, total, nil
 }
+
+func (s *Service) Cancel(ctx context.Context, id int) (Order, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Order{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	tag, err := tx.Exec(ctx, `
+		UPDATE sales_orders
+		SET status = 'CANCELLED', cancelled_at = now()
+		WHERE id = $1 AND status = 'CREATED'`,
+		id,
+	)
+	if err != nil {
+		return Order{}, err
+	}
+	if tag.RowsAffected() == 0 {
+		var exists bool
+		err := tx.QueryRow(
+			ctx,
+			`SELECT EXISTS (SELECT 1 FROM sales_orders WHERE id = $1)`,
+			id,
+		).Scan(&exists)
+		if err != nil {
+			return Order{}, err
+		}
+		if !exists {
+			return Order{}, apperr.NotFound("order not found")
+		}
+		return Order{}, apperr.Conflict(
+			CodeAlreadyCancelled,
+			"order is already cancelled",
+		)
+	}
+
+	rows, err := tx.Query(ctx, `
+		SELECT sku, qty
+		FROM sales_order_items
+		WHERE order_id = $1
+		ORDER BY sku`,
+		id,
+	)
+	if err != nil {
+		return Order{}, err
+	}
+
+	type cancelItem struct {
+		SKU string
+		Qty int
+	}
+	items, err := pgx.CollectRows(rows, pgx.RowToStructByPos[cancelItem])
+	if err != nil {
+		return Order{}, err
+	}
+
+	for _, item := range items {
+		var productID int
+		err := tx.QueryRow(ctx, `
+			UPDATE products
+			SET stock = stock + $2
+			WHERE sku = $1
+			RETURNING id`,
+			item.SKU,
+			item.Qty,
+		).Scan(&productID)
+		if err != nil {
+			return Order{}, err
+		}
+
+		_, err = tx.Exec(ctx, `
+			INSERT INTO stock_movements
+				(product_id, type, qty, note, order_id)
+			VALUES ($1, 'in', $2, $3, $4)`,
+			productID,
+			item.Qty,
+			fmt.Sprintf("cancel order #%d", id),
+			id,
+		)
+		if err != nil {
+			return Order{}, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return Order{}, err
+	}
+
+	return s.Get(ctx, id)
+}
