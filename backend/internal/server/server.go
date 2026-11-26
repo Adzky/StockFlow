@@ -10,6 +10,7 @@ import (
 	"stockflow/backend/internal/httpx"
 	"stockflow/backend/internal/order"
 	"stockflow/backend/internal/product"
+	"stockflow/backend/internal/summary"
 )
 
 func New(pool *pgxpool.Pool, log *slog.Logger) http.Handler {
@@ -39,6 +40,9 @@ func New(pool *pgxpool.Pool, log *slog.Logger) http.Handler {
 
 	orderHandler := order.NewHandler(order.NewService(pool))
 	orderHandler.Register(mux)
+
+	summaryHandler := summary.NewHandler(pool)
+	summaryHandler.Register(mux)
 
 	return httpx.Logger(log)(
 		httpx.Recover(
