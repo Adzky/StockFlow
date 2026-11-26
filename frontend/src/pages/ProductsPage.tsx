@@ -1,13 +1,21 @@
 import { useState } from 'react'
 
-import { useProducts } from '../api/queries'
+import { ApiError } from '../api/client'
+import { useDeleteProduct, useProducts } from '../api/queries'
 import type { Product, ProductFilter } from '../api/types'
-import { ProductTable } from '../components/ProductTable'
+import { Modal } from '../components/Modal'
 import { Pagination } from '../components/Pagination'
+import { ProductFormModal } from '../components/ProductFormModal'
+import { ProductTable } from '../components/ProductTable'
 import { EmptyState, ErrorState, LoadingState } from '../components/StateViews'
 import { SummaryCards } from '../components/SummaryCards'
 import { AdjustStockModal } from '../components/AdjustStockModal'
 import { useDebounce } from '../hooks/useDebounce'
+import { describeError } from '../lib/errors'
+
+type ProductFormState =
+  | { mode: 'create' }
+  | { mode: 'edit'; product: Product }
 
 const filters: { value: ProductFilter; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -23,6 +31,10 @@ export function ProductsPage() {
   const debouncedSearch = useDebounce(search, 300)
   const [adjustingProduct, setAdjustingProduct] = useState<Product | null>(null)
   const [flashMessage, setFlashMessage] = useState<string | null>(null)
+  const [productForm, setProductForm] = useState<ProductFormState | null>(null)
+  const [deletingProduct, setDeletingProduct] = useState<Product | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const deleteProduct = useDeleteProduct()
 
   const {
     data,
@@ -44,11 +56,55 @@ export function ProductsPage() {
     setPage(1)
   }
 
+  function openDeleteConfirmation(product: Product) {
+    deleteProduct.reset()
+    setDeleteError(null)
+    setDeletingProduct(product)
+  }
+
+  function closeDeleteConfirmation() {
+    setDeletingProduct(null)
+    setDeleteError(null)
+  }
+
+  function confirmDelete() {
+    if (!deletingProduct) {
+      return
+    }
+
+    deleteProduct.mutate(deletingProduct.id, {
+      onSuccess: () => {
+        setFlashMessage(`${deletingProduct.sku} deleted`)
+        closeDeleteConfirmation()
+      },
+      onError: (error) => {
+        if (
+          error instanceof ApiError
+          && error.status === 409
+          && error.code === 'PRODUCT_HAS_HISTORY'
+        ) {
+          setDeleteError(
+            "This product has stock history and can't be deleted. Deactivate it instead.",
+          )
+          return
+        }
+
+        setDeleteError(describeError(error))
+      },
+    })
+  }
+
   return (
     <main className="products-page">
       <SummaryCards />
 
       <h1>Products</h1>
+      <button
+        type="button"
+        onClick={() => setProductForm({ mode: 'create' })}
+      >
+        New product
+      </button>
 
       <div className="products-toolbar">
         <label htmlFor="product-search">Search products</label>
@@ -105,6 +161,10 @@ export function ProductsPage() {
               setFlashMessage(null)
               setAdjustingProduct(product)
             }}
+            onEdit={(product) => {
+              setProductForm({ mode: 'edit', product })
+            }}
+            onDelete={openDeleteConfirmation}
           />
           <Pagination
             page={page}
@@ -132,6 +192,45 @@ export function ProductsPage() {
             )
           }}
         />
+      )}
+
+      {productForm?.mode === 'create' && (
+        <ProductFormModal
+          mode="create"
+          onClose={() => setProductForm(null)}
+        />
+      )}
+
+      {productForm?.mode === 'edit' && (
+        <ProductFormModal
+          mode="edit"
+          product={productForm.product}
+          onClose={() => setProductForm(null)}
+        />
+      )}
+
+      {deletingProduct && (
+        <Modal
+          title={`Delete ${deletingProduct.sku}?`}
+          onClose={closeDeleteConfirmation}
+        >
+          <p>Delete {deletingProduct.name}? This action cannot be undone.</p>
+          {deleteError && <p role="alert">{deleteError}</p>}
+          <button
+            type="button"
+            disabled={deleteProduct.isPending}
+            onClick={confirmDelete}
+          >
+            Confirm delete
+          </button>
+          <button
+            type="button"
+            disabled={deleteProduct.isPending}
+            onClick={closeDeleteConfirmation}
+          >
+            Cancel
+          </button>
+        </Modal>
       )}
     </main>
   )

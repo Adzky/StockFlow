@@ -76,6 +76,23 @@ afterEach(() => {
 })
 
 describe('ProductsPage', () => {
+  it('opens the create form from the New product button', async () => {
+    vi.spyOn(api, 'listProducts').mockResolvedValue(
+      productResponse([product]),
+    )
+
+    renderProductsPage()
+
+    await screen.findByRole('row', { name: /BR-001/ })
+    fireEvent.click(screen.getByRole('button', { name: 'New product' }))
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByLabelText('SKU')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Create product' }),
+    ).toBeInTheDocument()
+  })
+
   it('renders a product row with formatted price and active status', async () => {
     vi.spyOn(api, 'listProducts').mockResolvedValue(
       productResponse([product]),
@@ -149,5 +166,70 @@ describe('ProductsPage', () => {
       page: 1,
       limit: 20,
     })
+  })
+
+  it('opens the selected product in edit mode', async () => {
+    vi.spyOn(api, 'listProducts').mockResolvedValue(
+      productResponse([product]),
+    )
+
+    renderProductsPage()
+
+    const row = await screen.findByRole('row', { name: /BR-001/ })
+    fireEvent.click(within(row).getByRole('button', { name: 'Edit' }))
+
+    expect(screen.getByLabelText('SKU')).toHaveValue('BR-001')
+    expect(screen.getByLabelText('SKU')).toHaveAttribute('readonly')
+    expect(screen.queryByLabelText('Stock')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Save changes' }),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the history message when product deletion returns 409', async () => {
+    vi.spyOn(api, 'listProducts').mockResolvedValue(
+      productResponse([product]),
+    )
+    const deleteProduct = vi.spyOn(api, 'deleteProduct').mockRejectedValue(
+      new ApiError(
+        409,
+        'PRODUCT_HAS_HISTORY',
+        'product has stock history and cannot be deleted',
+      ),
+    )
+
+    renderProductsPage()
+
+    const row = await screen.findByRole('row', { name: /BR-001/ })
+    fireEvent.click(within(row).getByRole('button', { name: 'Delete' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('Delete BR-001?')
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Confirm delete' }),
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "This product has stock history and can't be deleted. Deactivate it instead.",
+    )
+    expect(deleteProduct).toHaveBeenCalledWith(product.id)
+  })
+
+  it('removes a product from the list after deletion succeeds', async () => {
+    vi.spyOn(api, 'listProducts')
+      .mockResolvedValueOnce(productResponse([product]))
+      .mockResolvedValue(productResponse([]))
+    const deleteProduct = vi
+      .spyOn(api, 'deleteProduct')
+      .mockResolvedValue(undefined)
+
+    renderProductsPage()
+
+    const row = await screen.findByRole('row', { name: /BR-001/ })
+    fireEvent.click(within(row).getByRole('button', { name: 'Delete' }))
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Confirm delete' }),
+    )
+
+    expect(await screen.findByText('No products match')).toBeInTheDocument()
+    expect(deleteProduct).toHaveBeenCalledWith(product.id)
   })
 })

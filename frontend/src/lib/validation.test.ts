@@ -6,8 +6,13 @@ import {
   parseQty,
   QTY_MESSAGE,
   toCreateOrderInput,
+  validateProductForm,
   validateOrderDraft,
   validateStockAdjust,
+} from './validation'
+import type {
+  ProductForm,
+  ProductFormErrors,
 } from './validation'
 
 describe('parseQty', () => {
@@ -55,6 +60,108 @@ describe('validateStockAdjust', () => {
     expect(
       validateStockAdjust({ type: 'out', qty: '3', note: 'sale' }),
     ).toEqual({})
+  })
+})
+
+describe('validateProductForm', () => {
+  const validForm: ProductForm = {
+    sku: 'BRS-1',
+    name: 'Beras',
+    price: '0',
+    stock: '0',
+    isActive: true,
+  }
+
+  it.each<{
+    name: string
+    form: ProductForm
+    mode: 'create' | 'edit'
+    expected: ProductFormErrors
+  }>([
+    {
+      name: 'requires SKU when creating',
+      form: { ...validForm, sku: ' ' },
+      mode: 'create',
+      expected: { sku: 'is required' },
+    },
+    {
+      name: 'limits SKU length to 64 characters',
+      form: { ...validForm, sku: 'A'.repeat(65) },
+      mode: 'create',
+      expected: { sku: 'must be at most 64 characters' },
+    },
+    {
+      name: 'requires a nonblank name',
+      form: { ...validForm, name: '   ' },
+      mode: 'create',
+      expected: { name: 'is required' },
+    },
+    {
+      name: 'limits name length to 200 characters',
+      form: { ...validForm, name: 'N'.repeat(201) },
+      mode: 'create',
+      expected: { name: 'must be at most 200 characters' },
+    },
+    {
+      name: 'requires price',
+      form: { ...validForm, price: '' },
+      mode: 'create',
+      expected: { price: 'is required' },
+    },
+    {
+      name: 'limits price to 1000000000',
+      form: { ...validForm, price: '1000000001' },
+      mode: 'create',
+      expected: { price: 'must be between 0 and 1000000000' },
+    },
+    {
+      name: 'does not allow negative stock',
+      form: { ...validForm, stock: '-1' },
+      mode: 'create',
+      expected: { stock: 'must be between 0 and 1000000' },
+    },
+    {
+      name: 'allows an omitted optional stock value',
+      form: { ...validForm, stock: '' },
+      mode: 'create',
+      expected: {},
+    },
+    {
+      name: 'ignores SKU and stock in edit mode',
+      form: { ...validForm, sku: '', stock: '-1' },
+      mode: 'edit',
+      expected: {},
+    },
+  ])('$name', ({ form, mode, expected }) => {
+    expect(validateProductForm(form, mode)).toEqual(expected)
+  })
+
+  it('rejects SKU with invalid characters', () => {
+    expect(
+      validateProductForm({ ...validForm, sku: 'AB C' }, 'create'),
+    ).toEqual({
+      sku: 'may contain only A-Z, 0-9 and -',
+    })
+  })
+
+  it('rejects a price below zero', () => {
+    expect(
+      validateProductForm({ ...validForm, price: '-1' }, 'create'),
+    ).toEqual({
+      price: 'must be between 0 and 1000000000',
+    })
+  })
+
+  it('rejects stock above the allowed range', () => {
+    expect(
+      validateProductForm({ ...validForm, stock: '1000001' }, 'create'),
+    ).toEqual({
+      stock: 'must be between 0 and 1000000',
+    })
+  })
+
+  it('accepts a valid product form', () => {
+    expect(validateProductForm(validForm, 'create')).toEqual({})
   })
 })
 

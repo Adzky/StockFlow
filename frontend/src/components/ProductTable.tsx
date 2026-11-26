@@ -5,9 +5,13 @@ import { StatusBadge } from './StatusBadge'
 export function ProductTable({
   products,
   onAdjust,
+  onEdit,
+  onDelete,
 }: {
   products: Product[]
   onAdjust: (product: Product) => void
+  onEdit: (product: Product) => void
+  onDelete: (product: Product) => void
 }) {
   return (
     <div className="table-wrap">
@@ -52,6 +56,12 @@ export function ProductTable({
               <td>
                 <button type="button" onClick={() => onAdjust(product)}>
                   Adjust stock
+                </button>
+                <button type="button" onClick={() => onEdit(product)}>
+                  Edit
+                </button>
+                <button type="button" onClick={() => onDelete(product)}>
+                  Delete
                 </button>
               </td>
             </tr>

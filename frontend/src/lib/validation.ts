@@ -10,6 +10,66 @@ export function normalizeSku(s: string): string {
   return s.trim().toUpperCase()
 }
 
+export interface ProductForm {
+  sku: string
+  name: string
+  price: string
+  stock: string
+  isActive: boolean
+}
+
+export type ProductFormErrors = Partial<
+  Record<'sku' | 'name' | 'price' | 'stock', string>
+>
+
+export function validateProductForm(
+  form: ProductForm,
+  mode: 'create' | 'edit',
+): ProductFormErrors {
+  const errors: ProductFormErrors = {}
+
+  if (mode === 'create') {
+    const sku = normalizeSku(form.sku)
+
+    if (!sku) {
+      errors.sku = 'is required'
+    } else if (sku.length > 64) {
+      errors.sku = 'must be at most 64 characters'
+    } else if (!/^[A-Z0-9-]+$/.test(sku)) {
+      errors.sku = 'may contain only A-Z, 0-9 and -'
+    }
+  }
+
+  const name = form.name.trim()
+  if (!name) {
+    errors.name = 'is required'
+  } else if (Array.from(name).length > 200) {
+    errors.name = 'must be at most 200 characters'
+  }
+
+  const price = form.price.trim()
+  const priceNumber = Number(price)
+  if (!price) {
+    errors.price = 'is required'
+  } else if (
+    !/^-?\d+$/.test(price)
+    || priceNumber < 0
+    || priceNumber > 1_000_000_000
+  ) {
+    errors.price = 'must be between 0 and 1000000000'
+  }
+
+  if (mode === 'create' && form.stock.trim()) {
+    const stock = form.stock.trim()
+    const stockNumber = Number(stock)
+    if (!/^\d+$/.test(stock) || stockNumber > 1_000_000) {
+      errors.stock = 'must be between 0 and 1000000'
+    }
+  }
+
+  return errors
+}
+
 export function parseQty(raw: string): number | null {
   const value = raw.trim()
 
