@@ -154,9 +154,9 @@ func TestAdjustStock_Validation400(t *testing.T) {
 	id := testdb.InsertProduct(t, pool, "BRS-1", 78000, 5)
 
 	tests := []struct {
-		name       string
-		body       string
-		wantCode   string
+		name     string
+		body     string
+		wantCode string
 	}{
 		{name: "zero quantity", body: `{"type":"in","qty":0}`, wantCode: "VALIDATION_FAILED"},
 		{name: "negative quantity", body: `{"type":"in","qty":-1}`, wantCode: "VALIDATION_FAILED"},
@@ -210,4 +210,95 @@ func TestAdjustStock_InactiveProductAllowed(t *testing.T) {
 	require.NoError(t, json.Unmarshal(body, &result))
 	require.False(t, result.Product.IsActive)
 	require.Equal(t, 6, result.Product.Stock)
+}
+
+func TestMovements_NewestFirst(t *testing.T) {
+	srv, pool := apitest.Start(t)
+	id := testdb.InsertProduct(t, pool, "BRS-1", 78000, 5)
+
+	var id1, id2, id3 int
+
+	err := pool.QueryRow(
+		t.Context(),
+		`INSERT INTO stock_movements (product_id, type, qty, note, created_at)
+         VALUES ($1, 'in', 1, 'first', '2026-01-01T00:00:00Z')
+         RETURNING id`,
+		id,
+	).Scan(&id1)
+	require.NoError(t, err)
+
+	err = pool.QueryRow(
+		t.Context(),
+		`INSERT INTO stock_movements (product_id, type, qty, note, created_at)
+         VALUES ($1, 'out', 1, 'second', '2026-01-03T00:00:00Z')
+         RETURNING id`,
+		id,
+	).Scan(&id2)
+	require.NoError(t, err)
+
+	err = pool.QueryRow(
+		t.Context(),
+		`INSERT INTO stock_movements (product_id, type, qty, note, created_at)
+         VALUES ($1, 'in', 2, 'third', '2026-01-03T00:00:00Z')
+         RETURNING id`,
+		id,
+	).Scan(&id3)
+	require.NoError(t, err)
+
+	status, body := apitest.Do(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/products/"+strconv.Itoa(id)+"/movements",
+		"",
+	)
+
+	require.Equal(t, http.StatusOK, status)
+
+	var result struct {
+		Data []product.Movement `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(body, &result))
+
+	require.Len(t, result.Data, 3)
+	require.Equal(t, id3, result.Data[0].ID)
+	require.Equal(t, id2, result.Data[1].ID)
+	require.Equal(t, id1, result.Data[2].ID)
+}
+
+func TestMovements_Empty(t *testing.T) {
+	srv, pool := apitest.Start(t)
+	id := testdb.InsertProduct(t, pool, "BRS-1", 78000, 5)
+
+	status, body := apitest.Do(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/products/"+strconv.Itoa(id)+"/movements",
+		"",
+	)
+
+	require.Equal(t, http.StatusOK, status)
+
+	var result struct {
+		Data []product.Movement `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(body, &result))
+	require.NotNil(t, result.Data)
+	require.Empty(t, result.Data)
+}
+
+func TestMovements_404(t *testing.T) {
+	srv, _ := apitest.Start(t)
+
+	status, body := apitest.Do(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/products/999/movements",
+		"",
+	)
+
+	require.Equal(t, http.StatusNotFound, status)
+	require.Equal(t, "NOT_FOUND", apitest.Err(t, body).Code)
 }

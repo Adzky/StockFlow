@@ -354,3 +354,53 @@ func (s *Store) AdjustStock(
 		Movement: movement,
 	}, nil
 }
+
+func (s *Store) Movements(ctx context.Context, productID int) ([]Movement, error) {
+	var exists bool
+	err := s.pool.QueryRow(
+		ctx,
+		`SELECT EXISTS (SELECT 1 FROM products WHERE id = $1)`,
+		productID,
+	).Scan(&exists)
+	if err != nil {
+		return nil, fmt.Errorf("check product movements: %w", err)
+	}
+	if !exists {
+		return nil, apperr.NotFound("product not found")
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, product_id, type, qty, note, order_id, created_at
+		FROM stock_movements
+		WHERE product_id = $1
+		ORDER BY created_at DESC, id DESC`,
+		productID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list stock movements: %w", err)
+	}
+	defer rows.Close()
+
+	movements := make([]Movement, 0)
+	for rows.Next() {
+		var movement Movement
+		err := rows.Scan(
+			&movement.ID,
+			&movement.ProductID,
+			&movement.Type,
+			&movement.Qty,
+			&movement.Note,
+			&movement.OrderID,
+			&movement.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan stock movement: %w", err)
+		}
+		movements = append(movements, movement)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate stock movements: %w", err)
+	}
+
+	return movements, nil
+}

@@ -21,6 +21,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("GET /api/products", httpx.Handle(h.list))
 	mux.Handle("DELETE /api/products/{id}", httpx.Handle(h.remove))
 	mux.Handle("POST /api/products/{id}/stock", httpx.Handle(h.adjustStock))
+	mux.Handle("GET /api/products/{id}/movements", httpx.Handle(h.movements))
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) error {
@@ -147,5 +148,22 @@ func (h *Handler) adjustStock(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, result)
+	return nil
+}
+
+func (h *Handler) movements(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+
+	movements, err := h.store.Movements(r.Context(), id)
+	if err != nil {
+		return err
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, struct {
+		Data []Movement `json:"data"`
+	}{Data: movements})
 	return nil
 }
