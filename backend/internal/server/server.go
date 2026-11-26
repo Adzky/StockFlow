@@ -8,6 +8,7 @@ import (
 
 	"stockflow/backend/internal/apperr"
 	"stockflow/backend/internal/httpx"
+	"stockflow/backend/internal/product"
 )
 
 func New(pool *pgxpool.Pool, log *slog.Logger) http.Handler {
@@ -31,6 +32,9 @@ func New(pool *pgxpool.Pool, log *slog.Logger) http.Handler {
 			"status": "ok",
 		})
 	})
+
+	productHandler := product.NewHandler(product.NewStore(pool))
+	productHandler.Register(mux)
 
 	return httpx.Logger(log)(
 		httpx.Recover(
