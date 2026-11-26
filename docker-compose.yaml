@@ -27,6 +27,24 @@ services:
     command: ["psql", "postgres://stockflow:stockflow@db:5432/stockflow", "-v", "ON_ERROR_STOP=1", "--single-transaction", "-f", "/seed/seed.sql"]
     depends_on:
       migrate: { condition: service_completed_successfully }
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgres://stockflow:stockflow@db:5432/stockflow?sslmode=disable
+    ports: ["8080:8080"]
+    depends_on:
+      seed: { condition: service_completed_successfully }
+  frontend:
+    image: node:24-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      VITE_API_TARGET: http://backend:8080
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+    ports: ["5173:5173"]
+    depends_on: [backend]
   backend-test:
     image: golang:1.27
     profiles: ["test"]

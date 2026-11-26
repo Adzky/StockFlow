@@ -6,28 +6,35 @@ application backed by a Go API.
 
 ## Quick start
 
-This path is designed to take under five minutes once Docker images and dependencies are
-available. The first run may take longer while they download.
-Prerequisites:
+The easiest way to run the full app is with Docker Compose. The first run may take longer while
+Docker downloads images and the frontend installs dependencies.
 
-- Docker with the Docker Compose plugin
-- Go 1.27
-- Node.js 24 and npm
+Prerequisite: Docker with the Docker Compose plugin.
 
-### 1. Start PostgreSQL and load the sample data
+### Run the full stack
 
-Run these commands from the repository root:
+From the repository root, run:
+
+```powershell
+docker compose up --build
+```
+
+Compose starts PostgreSQL, applies migrations, loads sample data, and runs the API and frontend.
+Open [http://localhost:5173](http://localhost:5173). Press Ctrl+C to stop the services; the
+PostgreSQL volume and its data are retained.
+
+### Run the API and frontend from source
+
+For local development with Go and Node.js, install Go 1.27 and Node.js 24 with npm. First start
+PostgreSQL and load the sample data from the repository root:
 
 ```sh
-docker compose up -d
+docker compose up -d db migrate seed
 docker compose logs migrate seed
 ```
 
-Wait for the database to become healthy and for the migration and seed services to finish.
-
-### 2. Start the API
-
-In a new terminal, run one of these from the repository root.
+Wait for the database to become healthy and for migration and seed to finish. Then run the API in
+one terminal from the repository root.
 
 PowerShell:
 
@@ -46,26 +53,22 @@ go run ./cmd/api
 ```
 
 The API listens on `http://localhost:8080` by default. `DATABASE_URL` is required; `PORT` is
-optional. Check that the API and database are ready:
+optional. In a second terminal, start the frontend:
+
+```powershell
+Set-Location frontend
+npm install
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173). Vite proxies `/api` requests to the local
+API, so no separate CORS configuration is needed for development. Check API readiness with:
 
 ```sh
 curl -i http://localhost:8080/api/health
 ```
 
 The expected response is `200 OK` with `{"status":"ok"}`.
-
-### 3. Start the frontend
-
-In another terminal, run from the repository root:
-
-```sh
-cd frontend
-npm install
-npm run dev
-```
-
-Open [http://localhost:5173](http://localhost:5173). Vite proxies `/api` requests to the local
-API, so no separate CORS configuration is needed for development.
 
 ## Tests
 
