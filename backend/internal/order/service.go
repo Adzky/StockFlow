@@ -257,3 +257,61 @@ func (s *Service) Get(ctx context.Context, id int) (Order, error) {
 
 	return result, nil
 }
+
+func (s *Service) List(ctx context.Context, page, limit int) ([]Summary, int, error) {
+	var total int
+	err := s.pool.QueryRow(
+		ctx,
+		`SELECT count(*) FROM sales_orders`,
+	).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("count orders: %w", err)
+	}
+
+	offset := (page - 1) * limit
+	rows, err := s.pool.Query(ctx, `
+		SELECT o.id,
+		       o.customer,
+		       o.status,
+		       o.total,
+		       o.created_at,
+		       o.cancelled_at,
+		       (
+		         SELECT count(*)
+		         FROM sales_order_items i
+		         WHERE i.order_id = o.id
+		       )
+		FROM sales_orders o
+		ORDER BY o.created_at DESC, o.id DESC
+		LIMIT $1 OFFSET $2`,
+		limit,
+		offset,
+	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list orders: %w", err)
+	}
+	defer rows.Close()
+
+	summaries := make([]Summary, 0)
+	for rows.Next() {
+		var summary Summary
+		err := rows.Scan(
+			&summary.ID,
+			&summary.Customer,
+			&summary.Status,
+			&summary.Total,
+			&summary.CreatedAt,
+			&summary.CancelledAt,
+			&summary.ItemCount,
+		)
+		if err != nil {
+			return nil, 0, fmt.Errorf("scan order summary: %w", err)
+		}
+		summaries = append(summaries, summary)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate order summaries: %w", err)
+	}
+
+	return summaries, total, nil
+}
