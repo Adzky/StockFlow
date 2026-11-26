@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -157,4 +158,120 @@ func scanProduct(row pgx.Row) (Product, error) {
 	}
 
 	return product, nil
+}
+
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+const listWhere = `
+WHERE ($1::text = '' OR p.sku ILIKE $1 OR p.name ILIKE $1)
+  AND CASE $2::text
+        WHEN 'active'    THEN p.is_active
+        WHEN 'inactive'  THEN NOT p.is_active
+        WHEN 'low_stock' THEN p.is_active AND p.stock <= 10
+        ELSE TRUE
+      END`
+
+type ListParams struct {
+	Search string
+	Filter string
+	Page   int
+	Limit  int
+}
+
+func (s *Store) List(
+	ctx context.Context,
+	p ListParams,
+) ([]Product, int, error) {
+	pattern := ""
+	if search := strings.TrimSpace(p.Search); search != "" {
+		pattern = "%" + likeEscaper.Replace(search) + "%"
+	}
+
+	var total int
+	err := s.pool.QueryRow(
+		ctx,
+		`SELECT count(*) FROM products p`+listWhere,
+		pattern,
+		p.Filter,
+	).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("count products: %w", err)
+	}
+
+	offset := (p.Page - 1) * p.Limit
+	rows, err := s.pool.Query(
+		ctx,
+		productSelect+listWhere+`
+ORDER BY p.id
+LIMIT $3 OFFSET $4`,
+		pattern,
+		p.Filter,
+		p.Limit,
+		offset,
+	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list products: %w", err)
+	}
+	defer rows.Close()
+
+	products := make([]Product, 0)
+	for rows.Next() {
+		item, err := scanProduct(rows)
+		if err != nil {
+			return nil, 0, fmt.Errorf("scan product: %w", err)
+		}
+		products = append(products, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate products: %w", err)
+	}
+
+	return products, total, nil
+}
+
+func (s *Store) Delete(ctx context.Context, id int) error {
+	tag, err := s.pool.Exec(
+		ctx,
+		`DELETE FROM products p
+         WHERE p.id = $1
+           AND NOT EXISTS (
+               SELECT 1
+               FROM stock_movements m
+               WHERE m.product_id = p.id
+           )`,
+		id,
+	)
+	if db.IsPgCode(err, "23503") {
+		return apperr.Conflict(
+			"PRODUCT_HAS_HISTORY",
+			"product has stock history and cannot be deleted",
+		)
+	}
+	if err != nil {
+		return fmt.Errorf("delete product: %w", err)
+	}
+
+	if tag.RowsAffected() > 0 {
+		return nil
+	}
+
+	var exists bool
+	err = s.pool.QueryRow(
+		ctx,
+		`SELECT EXISTS (SELECT 1 FROM products WHERE id = $1)`,
+		id,
+	).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("check product after delete: %w", err)
+	}
+
+	if !exists {
+		return apperr.NotFound("product not found")
+	}
+
+	return apperr.Conflict(
+		"PRODUCT_HAS_HISTORY",
+		"product has stock history and cannot be deleted",
+	)
 }

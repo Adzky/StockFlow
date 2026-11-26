@@ -2,13 +2,17 @@ package product_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"stockflow/backend/internal/apitest"
+	"stockflow/backend/internal/httpx"
 	"stockflow/backend/internal/product"
 	"stockflow/backend/internal/testdb"
 )
@@ -222,4 +226,127 @@ func TestUpdateProduct_RejectsStockAndSKU(t *testing.T) {
 		id,
 	).Scan(&sku))
 	require.Equal(t, "BRS-1", sku)
+}
+
+func listFixture(t *testing.T) (*httptest.Server, *pgxpool.Pool) {
+	t.Helper()
+
+	srv, pool := apitest.Start(t)
+
+	insert := func(sku, name string, stock int) int {
+		id := testdb.InsertProduct(t, pool, sku, 100, stock)
+		testdb.Exec(t, pool, `UPDATE products SET name = $2 WHERE id = $1`, id, name)
+		return id
+	}
+
+	insert("BRS-1", "Beras Premium", 50)
+	insert("MYK-1", "Minyak Goreng", 5)
+
+	gulID := insert("GUL-1", "Gula Pasir", 10)
+	testdb.Exec(t, pool, `UPDATE products SET is_active = false WHERE id = $1`, gulID)
+
+	insert("PCT-50", "Diskon 50% Pack", 20)
+
+	for i := 1; i <= 21; i++ {
+		insert(fmt.Sprintf("BULK-%02d", i), "Bulk item", 100)
+	}
+
+	return srv, pool
+}
+
+func decodeProductPage(
+	t *testing.T,
+	raw []byte,
+) httpx.Paged[product.Product] {
+	t.Helper()
+
+	var page httpx.Paged[product.Product]
+	require.NoError(t, json.Unmarshal(raw, &page))
+	return page
+}
+
+func TestListProducts_DefaultPaging(t *testing.T) {
+	srv, _ := listFixture(t)
+
+	status, raw := apitest.Do(t, srv, http.MethodGet, "/api/products", "")
+	require.Equal(t, http.StatusOK, status)
+
+	page := decodeProductPage(t, raw)
+	require.Equal(t, 1, page.Page)
+	require.Equal(t, 20, page.Limit)
+	require.Equal(t, 25, page.Total)
+	require.Len(t, page.Data, 20)
+
+	for i := 1; i < len(page.Data); i++ {
+		require.Less(t, page.Data[i-1].ID, page.Data[i].ID)
+	}
+}
+
+func TestDeleteProduct_NoHistory204(t *testing.T) {
+	srv, pool := apitest.Start(t)
+	id := testdb.InsertProduct(t, pool, "BRS-1", 78000, 0)
+
+	status, body := apitest.Do(
+		t,
+		srv,
+		http.MethodDelete,
+		"/api/products/"+strconv.Itoa(id),
+		"",
+	)
+
+	require.Equal(t, http.StatusNoContent, status)
+	require.Empty(t, body)
+	require.Zero(
+		t,
+		testdb.Int(t, pool, `SELECT count(*) FROM products WHERE id = $1`, id),
+	)
+}
+
+func TestDeleteProduct_WithHistory409(t *testing.T) {
+	srv, pool := apitest.Start(t)
+	id := testdb.InsertProduct(t, pool, "BRS-1", 78000, 0)
+
+	testdb.Exec(
+		t,
+		pool,
+		`INSERT INTO stock_movements (product_id, type, qty, note)
+         VALUES ($1, 'in', 1, 'test movement')`,
+		id,
+	)
+
+	status, body := apitest.Do(
+		t,
+		srv,
+		http.MethodDelete,
+		"/api/products/"+strconv.Itoa(id),
+		"",
+	)
+
+	require.Equal(t, http.StatusConflict, status)
+	require.Equal(t, "PRODUCT_HAS_HISTORY", apitest.Err(t, body).Code)
+	require.Equal(
+		t,
+		1,
+		testdb.Int(t, pool, `SELECT count(*) FROM products WHERE id = $1`, id),
+	)
+	require.Equal(
+		t,
+		1,
+		testdb.Int(t, pool, `SELECT count(*) FROM stock_movements WHERE product_id = $1`, id),
+	)
+}
+
+func TestDeleteProduct_404(t *testing.T) {
+	srv, _ := apitest.Start(t)
+
+	status, body := apitest.Do(
+		t,
+		srv,
+		http.MethodDelete,
+		"/api/products/999",
+		"",
+	)
+
+	require.Equal(t, http.StatusNotFound, status)
+	require.Equal(t, "NOT_FOUND", apitest.Err(t, body).Code)
 }
