@@ -1,4 +1,5 @@
 import { Link, Route, Routes } from 'react-router-dom'
+import { ProductsPage } from './pages/ProductsPage'
 
 export default function App() {
   return (
@@ -12,7 +13,7 @@ export default function App() {
       </nav>
 
       <Routes>
-        <Route path="/" element={<h1>Products</h1>} />
+        <Route path="/" element={<ProductsPage />} />
         <Route path="/orders" element={<h1>Orders</h1>} />
         <Route path="/orders/new" element={<h1>New order</h1>} />
         <Route path="/orders/:id" element={<h1>Order detail</h1>} />
