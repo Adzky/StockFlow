@@ -269,15 +269,13 @@ curl -s http://localhost:8080/api/summary
 - Consider optimistic UI updates where their failure behavior is clear.
 
 ## Hours spent
-
-Time was not tracked per phase, so reliable hour totals are unavailable.
-
 | Phase | Time |
 |---|---|
-| Planning and design | Not tracked |
-| Backend | Not tracked |
-| Frontend | Not tracked |
-| Documentation and verification | Not tracked |
+| Planning and design | 30 mins |
+| Backend scaffolding | 30 mins |
+| Backend handlers, functions, tests    | 3 hours |
+| Frontend scaffolding | 30 mins |
+| Frontend compositions, pages, tests | 4 hours |
 
 ## Sample data and database reset
 
